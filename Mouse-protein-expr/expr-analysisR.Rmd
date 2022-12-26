@@ -1,0 +1,564 @@
+---
+title: "Signature Project 2022"
+author: "YKNM"
+date: "12/13/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Mouse Protein Expression Analysis
+
+
+## Installing and Loading required packages
+```{r}
+packages <- c("readxl", "tidyverse", "psych", "corrplot", "randomForest",
+              "e1071", "caret", "neuralnet", "nnet", "NeuralSens","ipred",
+              "DataExplorer", "ggplot2", "FactoMineR", "factoextra", "devtools", 
+              "ggbiplot", "pROC")
+
+# readxl: for reading excel data file
+# tidyverse: for general data utility functions
+# psych: for pairs panel plot
+# corrplot: for correlation matrix
+# e1071: for Naive Bayes
+# caret: for data preparation and evaluation of model
+# neuralnet: for NN modeling
+# nnet: for multinomial logistic regression
+# ipred: for bagging
+# randomForest: for stacked learner and variable importance
+# DataExplorer and ggplot2: for plots
+# FactoMineR, factoextra, devtools, ggbiplot: for PCA plots
+# pROC: for ROC and AUC plot
+
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+```
+
+
+## Download, Load and Investigate the expression dataset
+```{r}
+# define the URL -- you could dynamically build this
+URL <- "https://archive.ics.uci.edu/ml/machine-learning-databases/00342/Data_Cortex_Nuclear.xls"
+# download file
+download.file(URL, destfile="Data_Cortex_Nuclear.xls")
+# load the file
+ncortex.raw <- as.data.frame(read_excel("Data_Cortex_Nuclear.xls"))
+head(ncortex.raw)
+dim(ncortex.raw)
+str(ncortex.raw)
+
+# turning "warnings" off
+options(warn=-1)
+```
+
+## Pre-processing - I
+```{r}
+# since we are focusing our analysis on the `class` variable, we are going to drop
+# the rest of the categorical variables from the dataNC along with the `MouseID`column
+ncortex <- subset(ncortex.raw, select = -c(MouseID, Behavior, Genotype, Treatment))
+# We have the numeric features (77) and a multiclass target variable (1)
+
+# factorize target variable
+ncortex$class <- as.factor(ncortex.raw$class)
+# check categorical distribution
+plot_bar(ncortex)
+```
+
+***Imputation of missing values***
+```{r}
+## imputing missing values
+# check the columns with NAs
+featNA <- names(which(sapply(ncortex, anyNA)))
+dataNA <- ncortex[, featNA]
+
+# total number of NAs
+sum(is.na(dataNA))
+# check the distribution of NAs in each column
+colSums(is.na(dataNA))   
+# all columns have NAs below 50% of the sample size. Hence, they can be imputed.
+# computing mean of all columns using colMeans()
+means <- colMeans(dataNA, na.rm = TRUE)
+
+# replacing NA with mean value of each column
+for(i in colnames(dataNA)){
+  dataNA[,i][is.na(dataNA[,i])] <- means[i]
+}
+
+# check missing values in our feature dataNC frame
+sum(is.na(dataNA))
+
+# replace the imputed features with the original dataNC
+ncortex[,featNA] <- dataNA
+
+# get numeric feature 
+nc.feat <- ncortex[,-ncol(ncortex)]
+# get target variables
+nc.Class <- ncortex$class 
+
+# check basic statistics
+summary(ncortex)
+```
+
+## Pre-processing - II
+
+For normalization, we use min-max scaling from preProcess() and check our transformation using Shapiro-Wilk test. 
+```{r}
+# Min-max scaling (range 0-1 for each column)
+min_max_scaling <- function(data) {
+  pp <- preProcess(data.frame(data), method=c("range"))
+  scaled.nc <- predict(pp, as.data.frame(data))
+  return(scaled.nc)
+}
+scaled_ncortex <- min_max_scaling(data=nc.feat)
+
+# check normality distribution using Shapiro-wilk test
+testNormality <- function(data) {
+  norm.res <- data.frame(do.call(
+    cbind, lapply(data, function(x) shapiro.test(x)["p.value"])))
+  unnorm.col <- list(which(norm.res > 0.05))
+  print(paste("The unnormalized column(s) present in the data are", unnorm.col))
+  return(unlist(unnorm.col))
+}
+
+# check our scaled data for any unnormalized column(s)
+colX <- testNormality(data = scaled_ncortex)
+# check the distribution curves for the above columns
+pairs.panels(scaled_ncortex[,colX])
+```
+After plotting the distribution curves of the above columns, we observe that they are fairly normal and do not require further transformation.
+
+
+## Feature Study
+```{r}
+##########################################
+########## Feature Engineering ###########
+##########################################
+
+# All columns are normally distributed
+norm_ncortex <- scaled_ncortex
+norm_ncortex$Class <- nc.Class
+head(norm_ncortex)
+dim(norm_ncortex)
+
+## Method-1: Correlation Cut-off
+rawData <- scaled_ncortex
+# compute the correlation matrix
+corMatNC1 <- cor(rawData)
+# visualize the matrix, clustering features by correlation index
+corrplot(corMatNC1, order = "hclust")
+# After inspecting the matrix, we set the correlation threshold at 0.75
+# Apply correlation filter at 0.75
+highlyCor <- findCorrelation(corMatNC1, 0.75)
+#then we remove all the variable correlated with more 0.75.
+reduced_data <- rawData[,-highlyCor]
+# check the effect of correlation cut-off filter
+corMatNC2 <- cor(reduced_data)
+corrplot(corMatNC2, order = "hclust")
+```
+For correlation method, we use an ideal factor of 0.75 coefficient value as the threshold. So variables having inter-correlation with more than 0.75 value are dropped.
+
+```{r}
+## Method -2: Variable Importance
+feat <- reduced_data
+feat$Class <- nc.Class
+# training `randomForest` to calculate feature importance
+rf  <- randomForest(Class ~., data = feat)
+var_imp <- varImp(rf, scale = FALSE)
+# sort the score in decreasing order
+var_imp_df <- data.frame(cbind(variable = rownames(var_imp), score = var_imp[,1]))
+var_imp_df$score <- as.double(var_imp_df$score)
+rf_scores <- var_imp_df[order(var_imp_df$score,decreasing = T),]
+# setting up filter threshold --from the figure plotted down below
+rf.filter <- sum(round(rf_scores$score) > 15)
+# extracting data from filter
+rf.feat <- ncortex[,rf_scores$variable[1:rf.filter]]
+rf.feat$Class <- ncortex$class
+
+# plotting the rf_scores to determine threshold
+ggplot(rf_scores, aes(x=reorder(variable, score), y=score)) + 
+  geom_point() +
+  geom_segment(aes(x=variable,xend=variable,y=0,yend=score)) +
+  ggtitle("RF-feature plot") +
+  ylab("IncNodePurity") +
+  xlab("Variable Name") +
+  coord_flip()
+```
+From the Rf-feature plot, we observe a constant downward trend from variable 15. Hence, we choose the threshold of “15” to filter our final set of features.
+
+### PCA
+We perform PCA on our filtered data before we create feature subsets based on learning outcomes signified by our target classes. 
+```{r}
+##########################################
+################ PCA  ####################
+##########################################
+# initialize data for PCA 
+dataPCA <- rf.feat
+# dim(dataPCA)
+# colnames(dataPCA)
+
+## feature subset
+# normal and failed learning (subset-1)
+NL.data1 <- dataPCA %>% filter(Class == 'c-CS-s')
+FL.data <- dataPCA %>% filter(Class == 't-CS-s')
+# normal and rescued learning (subset-2)
+NL.data2 <- dataPCA %>% filter(Class == 'c-CS-m')
+RL.data <- dataPCA %>% filter(Class == 't-CS-m')
+
+# feature subset
+feat_data1 <- rbind(NL.data1, FL.data)
+dim(feat_data1)
+feat_data2 <- rbind(NL.data2, RL.data) 
+dim(feat_data2)
+
+# PCA with function PCA
+pca1 <- PCA(feat_data1[,-ncol(feat_data1)], scale.unit=F, graph=F)
+pca2 <- PCA(feat_data2[,-ncol(feat_data2)], scale.unit=F, graph=F)
+
+# custom function to analyze PCA results
+pcaEval <- function(pca){
+  scr.pca <- fviz_eig(pca, addlabels = T, ylim = c(0, 100))
+  p.pca <- plot(pca, choix = "var", shadow = TRUE, select = "cos2")
+  return(list(scr.pca, p.pca))
+}
+
+# biplot --to check distribution of observation among the two classes 
+PCA.plot <- function(pca, fdata) {
+  ggbiplot(pca,
+           groups = fdata$Class,
+           ellipse = TRUE,
+           circle = TRUE,
+           ellipse.prob = 0.7) + 
+    scale_color_discrete(name = '')+ 
+    theme(legend.direction = 'horizontal', legend.position = 'top')
+}
+
+# check pca results for feature subset-1
+PCA.plot(pca1, feat_data1)  # biplot
+```
+From the above plot, we observe from pca1 analysis on feature subset-1 that there are few features that provide strong variance for the given learning outcomes such as `pCAMKII_N, pPKCG_N, pPKCAB_N`.
+
+```{r}
+feval1 <- pcaEval(pca= pca1)
+feval1[1] # scree plot
+```
+Here, from the scree plot, we notice that the first two PCs approximately describe 75% of variance in the subset-1.
+```{r}
+feval1[2] # plot of important variables
+```
+```{r}
+# check pca results for feature subset-2
+PCA.plot(pca2, feat_data2) # biplot
+```
+From the biplot of subset-2, we get to understand that are similar features showing strong variance for different set of learning outcomes too.
+
+```{r}
+feval2 <- pcaEval(pca= pca2)
+feval2[1] # scree plot
+```
+From the second scree plot, we observe an explosive amount of variance from the first two PCs ~85%.
+
+```{r}
+feval2[2] # plot of important variables
+```
+The graph of variables are now very distinct for subset-2 with some handful features highlighted that may involve strongly for producing the respective learning outcomes.
+
+## Multi-class Classification Study
+
+## Splitting data set
+```{r}
+##########################################
+####### Train-Valid-Test splitting #######
+##########################################
+dataNC <- rf.feat
+head(rf.feat)
+# Simple into 3 sets 
+## --train: 60%
+## --valid: 20%
+## --test: 20%
+set.seed(100)
+splits = c(train = 0.6, test = 0.2, valid = 0.2)
+grp = sample(cut(seq(nrow(dataNC)), nrow(dataNC)*cumsum(c(0,splits)),
+                   labels = names(splits)))
+# get the data splitted in a list
+res = split(dataNC, grp)
+
+# train set
+trainX <- res$train
+dim(trainX)
+
+# valid set
+validX <- res$valid
+dim(validX)
+
+# valid set
+testX <- res$test
+dim(testX)
+```
+
+***Custom formula***
+```{r}
+# formula for training
+form <- paste(names(trainX)[1:ncol(trainX)-1], collapse = " + ")
+formula.NC <- formula(paste(names(trainX)[ncol(trainX)], form, sep = " ~ "))
+formula.NC  # check
+```
+
+## Training models
+
+**Naive Bayes**
+
+
+```{r}
+##########################################
+############ Base Modeling  ##############
+##########################################
+##Naive Bayes 
+# fit the model 
+nb.model <- e1071::naiveBayes(formula.NC, trainX)
+# make predictions using valid set
+nb.pred <- predict(nb.model, validX, type="class")
+# check reference and predicted classification
+nb.cm.valid <- confusionMatrix(nb.pred, validX$Class)
+nb.cm.valid$table
+nb.cm.valid$overall[1:2]
+```
+Here, from our base ’NB’ model, we observe there are several high chunks of misclassification. Hence, we perform a typical k-fold cross-validation (k=5) to improve the classification of the model.
+
+```{r}
+# k-fold cross validation (k=5)
+set.seed(213)
+NB.tune <- data.frame(fL=c(0,0.5,1.0), usekernel = TRUE, adjust=c(0,0.5,1.0))
+# model training with tuned hyper-parameters
+NB.model <- caret::train(formula.NC,trainX,'nb',
+             trControl=trainControl(method= 'cv',number= 5),
+             tuneGrid = NB.tune)
+# make predictions using valid set
+NB.pred <- predict(NB.model, validX)
+NB.cm.valid <- confusionMatrix(NB.pred, validX$Class)
+NB.cm.valid$table
+NB.cm.valid$overall[1:2]
+```
+
+**Artificial Neural Netwok**
+
+Here, I have set the argument "linear.output" to `FALSE`in order to tell the model that I want to apply the activation function and that I am not doing a regression task. Then I set the activation function to `logistic` (which by the way is the default option) in order to apply the logistic function.As far as the number of hidden neurons and layers, I tried some combinations and the one used seemed to perform slightly better than the others (around 1% of accuracy difference in cross-validation score.
+```{r}
+set.seed(334)
+# fit the model
+NN.model = neuralnet::neuralnet(formula.NC, trainX, 
+                     hidden=c(14, 10, 8), linear.output = FALSE,
+                     act.fct ="logistic")
+# plot the neural network
+plot(NN.model)
+
+tablePred.NN <- function(model, data){
+  # make predictions using valid set
+  raw.pred <- data.frame(neuralnet::compute(model, 
+                               data.frame(data[,-ncol(data)]))$net.result) 
+  # initialize target labels
+  labels <- c("c-CS-m", "c-CS-s", "c-SC-m", "c-SC-s", 
+            "t-CS-m", "t-CS-s", "t-SC-m", "t-SC-s") 
+  pred.label <- data.frame(max.col(raw.pred)) %>%  
+  mutate(prediction=labels[max.col.raw.pred.])
+  # make predictions using valid set
+  preds <- as.factor(pred.label[,2])
+  confMat <- confusionMatrix(validX$Class, preds, mode="prec_recall")
+  return(list(preds,confMat))
+}
+NN.cm.valid <- tablePred.NN(NN.model, validX)
+NN.cm.valid[2]
+```
+
+**Multinomial Logistic Regression**
+
+For our third model, we use Multinomial logistic regression from `nnet()` package since it is highly preferred if you want to perform multi-class classification using logistic regression.
+```{r}
+set.seed(232)
+# fit the model
+MGR.model <- nnet::multinom(formula.NC, data = trainX, trace = F)
+# make predictions using valid set
+MGR.pred <- predict(MGR.model, newdata=validX)
+# check reference and predicted classification
+MGR.cm.valid <- confusionMatrix(validX$Class, MGR.pred)
+MGR.cm.valid$table
+MGR.cm.valid$overall[1:2]
+```
+
+**Test performance of Base learners**
+```{r}
+# evaluate base learners test performances
+# model1
+NB.pred.test <- predict(NB.model, testX) 
+NB.cm.test <- confusionMatrix(NB.pred.test, testX$Class, mode="prec_recall") 
+NB.cm.test$table
+# model2
+NN.tablePred <- tablePred.NN(NN.model, testX) 
+NN.cm.test <- NN.tablePred[2]
+NN.cm.test
+# model3
+MGR.pred.test <- predict(MGR.model, testX)
+MGR.cm.test <- confusionMatrix(MGR.pred.test, testX$Class)
+MGR.cm.test$table
+```
+
+## Bagging
+```{r}
+## In-built Ensemble Model --bagging
+# fit the model 
+bag.model <- bagging(formula.NC, trainX)
+# estimate predictions on test data
+bag.pred <- predict(bag.model, testX)
+# get the model performance
+bag.cm.test <- confusionMatrix(as.factor(bag.pred), testX$Class)
+bag.cm.test$table
+```
+
+## Stacked Ensemble Learner
+
+Here, we create a stacked ensemble learner to check whether we can improve the classification performance for analysis even more.
+ Here, we first generate raw/prob prediction values of our three base models on valid data and use it as level-one dataset for training ensemble learner using “rf” (as decision tree based models always perform quite well for classification).
+After fitting our model on level-one dataset, we generate raw test predictions from base learner as our test dataset for predicting values from our super learner.
+```{r}
+# Custom Stacked Ensemble learner
+stackLearner <- function(model1, model2, model3, testData, validData){
+  ## --NB.model: model1 (Naive Bayes)
+  ## --NN.model: model2 (Artificial Neural Network)
+  ## --MGR.model: model3 (Multinomial Logistic regression)
+  
+  # raw predictions from the base models
+  validpred1 <- predict(model1, validData, type= "raw")
+  validpred2 <- predict(model2, validData, type= "raw")
+  colnames(validpred2) <- colnames(validpred1)
+  validpred3 <- predict(model3, validData, type= "probs")
+  # Generate level-one dataset for training the ensemble super-learner
+  basePred <- data.frame(validpred1, validpred2, validpred3, Class= validData$Class, 
+                         stringsAsFactors = F)
+  
+  # Train the ensemble
+  set.seed(270)
+  modelStack <- train(Class~., data = basePred, method = "rf")
+  
+  # Generate predictions on the test set
+  testPred1 <- predict(model1, newdata = testData,type= "raw")
+  testPred2 <- predict(model2, newdata = testData, type= "raw")
+  testPred3 <- predict(model3, newdata = testData,type= "probs")
+  
+  # Using the base learner test set predictions, 
+  # create the level-one dataset to feed to the ensemble
+  testPredLevelOne <- data.frame(testPred1, testPred2, testPred3, 
+                                 Class= testX$Class, stringsAsFactors = F)
+  # estimate predictions over tested base models
+  colnames(testPredLevelOne) <- colnames(basePred)
+  combPred <- predict(modelStack, testPredLevelOne)
+  
+  # Evaluate ensemble test performance
+  confMatrix <- confusionMatrix(combPred, testData$Class, mode="prec_recall")
+  return(list(confMatrix, combPred))
+}
+
+# func call
+stackResults  <- stackLearner(model1 = NB.model,
+                            model2 = NN.model,
+                            model3 = MGR.model, 
+                            testData = testX, validData = validX)
+# Ensemble prediction matrix
+ENS.confMat <- stackResults[1]
+ENS.confMat
+```
+From the matrix summary, it is quite evident that are stacked ensemble showcased exceptional results in terms of accuracy and kappa metrics (~98% and ~97%). 
+
+## Evaluation Metrics for all models
+```{r}
+# custom functio to print important metrics of our analyses
+evalMetrics <- function(confMat){
+  # metrics-1
+  print("The accuracy and kappa of the Naive Bayes model are")
+  print(round(confMat$overall[1:2] * 100,2))
+
+  # metrics-2
+  print("The precision, recall and F1-score for target classes are")
+  print(confMat$byClass[c(1,2,5,6),c(5,6,7)])
+}
+
+# model-1: Naive Bayes
+evalMetrics(confMat = NB.cm.test)
+
+# model-3: Multi-nomial Logistic Regression
+evalMetrics(confMat = MGR.cm.test)
+
+# model-5: Bagging 
+evalMetrics(confMat = bag.cm.test)
+```
+Comparing our base models over the test set, it appears that multinomial logistic regression has surpassed all the other models with respect to accuracy and kappa of  ~91% and ~90%. 
+
+For other metrics, more importantly, if we check the class `t-CS-m` & `t-CS-s` indicating Rescued learning and Failed learning, we observe again that precision, recall, and F1-score of MGR model is beating other model values.
+
+Although, when we compare MGR to Bagging, we see altogether different results. 
+It seems logical as bagging being an ensemble tree model which fits much better to classification data.
+
+Furthermore, we can also firmly say that our ***Stacked Ensemble Super learner*** has performed sub-par from all the other models in all metrics and even beating the built-in ensemble model -`bagging`.
+
+
+## ROC curve
+
+As our first step for evaluation, we plot ROC curve along the respective AUC values for the target sub-classes that define three major learning outcomes i.e. normal learning, rescued learning, failed learning
+```{r}
+# plotting the classes that are significant to our learning outcomes
+# normal learning: "c-CS-m"
+rocModels <- function(pred, test){
+  roc.pred <- as.ordered(pred)
+  # get roc results for every class label
+  res<- pROC::multiclass.roc(test$Class, roc.pred, quiet = T,
+                                 levels = c("c-CS-m", "c-CS-s", "c-SC-m", "c-SC-s", 
+                                            "t-CS-m", "t-CS-s", "t-SC-m", "t-SC-s"))
+  
+  plot.roc(res$rocs[[1]], 
+           print.auc=T,
+           legacy.axes = T, main="AUC plot")
+  # normal learning: "c-CS-s"
+  plot.roc(res$rocs[[2]],
+           add=T, col = 'red',
+           print.auc = T,
+           legacy.axes = T,
+           print.auc.adj = c(0,3))
+  # rescued learning: "t-CS-m"
+  plot.roc(res$rocs[[4]],add=T, col = 'blue',
+           print.auc=T,
+           legacy.axes = T,
+           print.auc.adj = c(0,5))
+  # failed learning: "t-CS-s"
+  plot.roc(res$rocs[[5]],
+           add=T, col = 'green',
+           print.auc = T,
+           legacy.axes = T,
+           print.auc.adj = c(0,7))
+  legend('bottomright',
+         legend = c('c-CS-m: NL-1','c-CS-s: NL-2',
+                    't-CS-m: RL', 't-CS-s: FL'),
+         col=c('black','red','blue', 'green'),lwd=2)
+  
+}
+# Plot AUC plots for all models
+# model-1: Naive Bayes
+rocModels(pred=NB.pred.test, test=testX)
+
+# model-2: Artificial Neural Network
+rocModels(pred=unlist(NN.tablePred[1]), test = testX)
+
+# model-3: Multi-nomial Logistic Regression
+rocModels(pred=MGR.pred.test, test = testX)
+
+# model-4: Stacked Ensemble Learner
+rocModels(pred=unlist(stackResults[2]), test = testX)
+
+# model-5: Bagging 
+rocModels(pred=bag.pred, test = testX)
+```
