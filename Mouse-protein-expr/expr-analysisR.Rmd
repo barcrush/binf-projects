@@ -1,6 +1,6 @@
 ---
-title: "Signature Project 2022"
-author: "YKNM"
+title: "Mouse Protein Expression Analysis"
+author: "YNKM"
 date: "12/13/2022"
 output: pdf_document
 ---
@@ -8,8 +8,6 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-# Mouse Protein Expression Analysis
-
 
 ## Installing and Loading required packages
 ```{r}
