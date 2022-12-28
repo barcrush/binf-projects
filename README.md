@@ -1,3 +1,3 @@
-# myProjects
+# Preface
 
-A repository that contains all my Bioinformatics and Data science projects!
+Welcome to `myProjects` repo, here you will find a wide variety of projects related to Bioinformatics & Data science.
