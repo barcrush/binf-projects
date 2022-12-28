@@ -1,0 +1,9 @@
+# do not ignore files from below formats
+!*.md
+!*.py
+!*.R
+!*.ipynb
+!*.jpeg
+!*.csv
+!*.xls
+!*.xml
