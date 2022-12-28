@@ -1,4 +1,3 @@
 # Abstract
 
-Welcome to `myProjects` repo, here you will find a wide variety of projects (short and long) related to Bioinformatics & Data science.
-
+Welcome to `myProjects` repo, here you will find a wide variety of projects related to Bioinformatics & Data science.
