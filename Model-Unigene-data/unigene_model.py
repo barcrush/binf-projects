@@ -1,20 +1,8 @@
 """Module to model the UniGene Data"""
 """
-Imagine we would like to retrieve the information from these files (or perhaps from species files from UniGene, 
-having the same format) for further manipulation and use. We will have to read each of the gene files, parse the 
-lines using regular expressions, and deliver the retrieved data to a function that will further manipulate it. 
-If we need to do that, it would be a good idea to store the data for each gene in a data structure, 
-and then deliver the data structure to the function, or store each gene data structure in large list or dictionary for
-further processing. There are two ways to address the data structure. The first would be to use objects, 
-but this is also a more detailed endevor, and that complexity is not always needed. 
-The other way would be to implement a nested data structure, like a nested dictionary.
---
-UniGene: It is an experimental system of partitioning GenBank entries into a non-redundant set of gene-oriented clusters
-A gene-oriented grouping of transcript sequences in the absence of reference genomes for a broad range of organisms.
-Each UniGene cluster contains sequences that represents unique gene, as well as the information related to its expression 
-profiles linked to which tissue type and map location.
-A total of 59,500 UNIGENE clusters have been mapped.
+A script that generates a nested dictionary from the Unigene files downloaded from the web.
 """
+
 import re
 from operator import methodcaller
 
