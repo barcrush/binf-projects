@@ -17,7 +17,7 @@ Secondly, for multi-class classification, the initial pre-processing involves ha
 
 For your information, my ideal goal was to use altogether different algorithms from previous study and try to generate the best result. Also, I have performed all the analysis in R rather than python which might be taken into consideration while comparing results.
 
-## Resullt comparison
+## Results
 
 <img width="645" alt="Screen Shot 2022-12-30 at 5 02 39 PM" src="https://user-images.githubusercontent.com/90593831/210114556-452466bc-2593-449f-b926-6c4a44344638.png">
 
