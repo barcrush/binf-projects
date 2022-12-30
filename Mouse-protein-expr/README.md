@@ -10,11 +10,18 @@ Graphical interpretation of the study is show below:
 
 ![tileshop](https://user-images.githubusercontent.com/90593831/210114119-2b9084d6-6adc-43bf-a32d-a9cc6e0441b2.jpeg)
 
-Firstly, we tried to extract features (genes) that were potentially responsible for a particular learning outcome and tried to compare our results with the previous studies using Filtration and extraction methods to select features of defined learning outcomes, and then we qualitatively isolated features from PCA.
+**Approach**
+Ideally, 
+Firstly, I tried to extract features (genes) that were potentially responsible for a particular learning outcome and tried to compare our results with the previous studies using common filtration and extraction methods to select features of specific learning outcomes (i.e., Normal, Failed and Rescued learning), and then we qualitatively isolated features from PCA.
 
-Secondly, for multi-class classification, the initial pre-processing involves handling missing values, sub-setting data for classification, and reducing features for improving our analysis. We used 4 models for classification analysis – Naïve Bayes, ANN, Multinomial logistic regression, and randomForest for the stacked learner. For evaluation, we monitored metrics such as accuracy, precision, F1-score, ROC curve, and AUC for all the models and choose the ideal model that generalizes the data set and reflects the best performance by considering the above metrics.
+Secondly, for multi-class classification, the initial pre-processing involves handling missing values, sub-setting data for classification, and reducing features for improving our analysis. We used 5 algorithms for classification analysis – Naïve Bayes, ANN, Multinomial logistic regression, randomForest for the stacked learner, and bagging as an in-built ensemble learner. For evaluation, we monitored metrics such as accuracy, precision, F1-score, ROC curve, and AUC for all the models and choose the ideal model that generalizes the data set and reflects the best performance by considering the above metrics.
+
+For your information, my ideal goal was to use altogether different algorithms from previous study and try to generate the best result. Also, I have performed all the analysis in R rather than python which might be taken into consideration while comparing results.
+
+**Resullt comparison**
+
+<img width="645" alt="Screen Shot 2022-12-30 at 5 02 39 PM" src="https://user-images.githubusercontent.com/90593831/210114556-452466bc-2593-449f-b926-6c4a44344638.png">
 
 
 ### References
 1. Kulan H, Dag T. In silico identification of critical proteins associated with learning process and immune system for Down syndrome. PLoS One. 2019 Jan 28;14(1):e0210954. doi: 10.1371/journal.pone.0210954. PMID: 30689644; PMCID: PMC6349309.
-2. Higuera C, Gardiner KJ, Cios KJ. Self-Organizing Feature Maps Identify Proteins Critical to Learning in a Mouse Model of Down Syndrome. PLoS One. 2015 Jun 25;10(6):e0129126. doi: 10.1371/journal.pone.0129126. PMID: 26111164; PMCID: PMC4482027.
