@@ -3,7 +3,7 @@
 Welcome to `myProjects` repo, here you will find a wide variety of projects related to Bioinformatics & Data science.
 
 ### 1. Model ENCODE data
-In this short project, 
+In this short project, we retrieve the unigene file 
 
 
 ### 2. Mouse Protein Analysis
