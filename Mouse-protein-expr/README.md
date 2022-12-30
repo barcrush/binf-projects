@@ -6,5 +6,5 @@ Secondly, for multi-class classification, the initial pre-processing involves ha
 
 
 ### References
-1. https://archive.ics.uci.edu/ml/datasets/Mice+Protein+Expression![image](https://user-images.githubusercontent.com/90593831/210113985-e5e683a9-8aa1-472d-b340-16f43c758758.png)
+1. https://archive.ics.uci.edu/ml/datasets/Mice+Protein+Expression
 
