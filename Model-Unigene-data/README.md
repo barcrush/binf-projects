@@ -14,3 +14,4 @@ If we need to do that, it would be a good idea to store the data for each gene i
 and then deliver the data structure to the function, or store each gene data structure in large list or dictionary for
 further processing.
 
+Furthermore, we create a script employed as a query program that assists in Unigene data annotation, i.e., providing gene information with respect to its expression profile across different tissues. In order to make this program bulletproof, we created some helper functions as well as unit testing scripts.
