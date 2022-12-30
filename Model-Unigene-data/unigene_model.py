@@ -1,4 +1,3 @@
-"""Module to model the UniGene Data"""
 """
 A script that generates a nested dictionary from the Unigene files downloaded from the web.
 """
