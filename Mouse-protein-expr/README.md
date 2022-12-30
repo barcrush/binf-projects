@@ -10,15 +10,14 @@ Graphical interpretation of the study is show below:
 
 ![tileshop](https://user-images.githubusercontent.com/90593831/210114119-2b9084d6-6adc-43bf-a32d-a9cc6e0441b2.jpeg)
 
-**Approach**
-Ideally, 
+## Approach
 Firstly, I tried to extract features (genes) that were potentially responsible for a particular learning outcome and tried to compare our results with the previous studies using common filtration and extraction methods to select features of specific learning outcomes (i.e., Normal, Failed and Rescued learning), and then we qualitatively isolated features from PCA.
 
 Secondly, for multi-class classification, the initial pre-processing involves handling missing values, sub-setting data for classification, and reducing features for improving our analysis. We used 5 algorithms for classification analysis – Naïve Bayes, ANN, Multinomial logistic regression, randomForest for the stacked learner, and bagging as an in-built ensemble learner. For evaluation, we monitored metrics such as accuracy, precision, F1-score, ROC curve, and AUC for all the models and choose the ideal model that generalizes the data set and reflects the best performance by considering the above metrics.
 
 For your information, my ideal goal was to use altogether different algorithms from previous study and try to generate the best result. Also, I have performed all the analysis in R rather than python which might be taken into consideration while comparing results.
 
-**Resullt comparison**
+## Resullt comparison
 
 <img width="645" alt="Screen Shot 2022-12-30 at 5 02 39 PM" src="https://user-images.githubusercontent.com/90593831/210114556-452466bc-2593-449f-b926-6c4a44344638.png">
 
