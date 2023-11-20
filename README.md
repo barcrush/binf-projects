@@ -3,7 +3,7 @@
 Welcome to `myProjects` repo, here you will find a wide variety of projects related to Bioinformatics & Data science.
 
 ### 1. Model UNIGENE data
-In this short project, we retrieve the UNIGENE file and devised a query software that generates gene information of various species and highlighted their expression profiles on different tissues (eg.: Humans, Horse, Sheep, etc.). ***Ideally, the whole project is carried out in R but I will be doing in python shortly.***
+In this short project, we retrieve the UNIGENE file and devised a query software that generates gene information of various species and highlighted their expression profiles on different tissues (eg.: Humans, Horse, Sheep, etc.).
 
 
 ### 2. Mouse Protein Analysis
