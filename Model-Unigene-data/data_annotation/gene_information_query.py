@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 File: gene_information_query.py
 

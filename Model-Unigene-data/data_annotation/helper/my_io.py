@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 A module that helps in opening the any input or output file and provide
 necessary error messages if there is any exception encountered

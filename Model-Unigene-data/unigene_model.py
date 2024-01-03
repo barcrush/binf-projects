@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 A script that generates a nested dictionary from the Unigene files downloaded from the web.
 """

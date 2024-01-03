@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 Example script:
 Gene data extracted from `unigene_model.py` is written to ".unigene" files
