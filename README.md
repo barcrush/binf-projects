@@ -3,7 +3,7 @@
 Welcome to MyProjects library, here you will find a wide range of completed and/or ongoing projects related to Bioinformatics & Data science.
 
 ### 1. Model UNIGENE data
-In this short project, we retrieve the UNIGENE file and devised a query software that generates gene information of various species and highlighted their expression profiles on different tissues (eg.: Humans, Horse, Sheep, etc.).
+In this project, we retrieve the UNIGENE file and devised a query software that generates gene information of various species and highlighted their expression profiles on different tissues (eg.: Humans, Horse, Sheep, etc.).
 
 
 ### 2. Mouse Protein Analysis
