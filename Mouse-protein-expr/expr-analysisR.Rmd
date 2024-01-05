@@ -2,7 +2,10 @@
 title: "Mouse Protein Expression Analysis"
 author: "YNKM"
 date: "10/13/2022"
-output: pdf_document
+output:
+  html_document:
+    df_print: paged
+    toc: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -11,10 +14,11 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Installing and Loading required packages
 ```{r}
-packages <- c("readxl", "tidyverse", "psych", "corrplot", "randomForest",
+options(repos = c(CRAN = "https://cran.rstudio.com"))
+packages <- c("readxl", "tidyverse", "reshape2", "psych", "corrplot", "randomForest",
               "e1071", "caret", "neuralnet", "nnet", "NeuralSens","ipred",
               "DataExplorer", "ggplot2", "FactoMineR", "factoextra", "devtools", 
-              "ggbiplot", "pROC")
+              "ggbiplot", "pROC", "broom", "ape", "dendextend")
 
 # readxl: for reading excel data file
 # tidyverse: for general data utility functions
@@ -39,10 +43,22 @@ if (any(installed_packages == FALSE)) {
 # Packages loading
 invisible(lapply(packages, library, character.only = TRUE))
 ```
+## Understanding the data
 
+[1] **Mouse ID** 
+
+[2:78] **Values of expression levels of 77 proteins**; the names of proteins are followed by N indicating that they were measured in the nuclear fraction. *For example: DYRK1A_n*
+
+[79] **Genotype**: control (c) or trisomy (t) 
+
+[80] **Treatment type**: memantine (m) or saline (s) 
+
+[81] **Behavior**: context-shock (CS) or shock-context (SC) 
+
+[82] **Class**: c-CS-s, c-CS-m, c-SC-s, c-SC-m, t-CS-s, t-CS-m, t-SC-s, t-SC-m
 
 ## Download, Load and Investigate the expression dataset
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # define the URL -- you could dynamically build this
 URL <- "https://archive.ics.uci.edu/ml/machine-learning-databases/00342/Data_Cortex_Nuclear.xls"
 # download file
@@ -52,27 +68,72 @@ ncortex.raw <- as.data.frame(read_excel("Data_Cortex_Nuclear.xls"))
 head(ncortex.raw)
 dim(ncortex.raw)
 str(ncortex.raw)
-
-# turning "warnings" off
-options(warn=-1)
 ```
 
-## Pre-processing - I
+## Data Manipulation and Cleaning
+
+### Outcome classes
+
+<center><img src="http://journals.plos.org/plosone/article/figure/image?size=large&id=info:doi/10.1371/journal.pone.0129126.g001" width="500"></center>
+
+1. **c-CS-s**: control mice, stimulated to learn, injected with saline (9 mice) 
+
+2. **c-CS-m**: control mice, stimulated to learn, injected with memantine (10 mice) 
+
+3. **c-SC-s**: control mice, not stimulated to learn, injected with saline (9 mice) 
+
+4. **c-SC-m**: control mice, not stimulated to learn, injected with memantine (10 mice) 
+
+5. **t-CS-s**: trisomy mice, stimulated to learn, injected with saline (7 mice) 
+
+6. **t-CS-m**: trisomy mice, stimulated to learn, injected with memantine (9 mice) 
+
+7. **t-SC-s**: trisomy mice, not stimulated to learn, injected with saline (9 mice) 
+
+8. **t-SC-m**: trisomy mice, not stimulated to learn, injected with memantine (9 mice)
+
+```{r, message=FALSE, warning=FALSE}
+ggplot(ncortex.raw, aes(class)) +
+  geom_bar(aes(fill = class), alpha = 0.8) +
+  theme_light() +
+  labs(title = "Count of each class")
+```
+
+## Data Manipulation & Cleaning
 ```{r}
 # since we are focusing our analysis on the `class` variable, we are going to drop
 # the rest of the categorical variables from the dataNC along with the `MouseID`column
 ncortex <- subset(ncortex.raw, select = -c(MouseID, Behavior, Genotype, Treatment))
-# We have the numeric features (77) and a multiclass target variable (1)
-
-# factorize target variable
+# We have the numeric features (77) and a multi-class target variable (1)
 ncortex$class <- as.factor(ncortex.raw$class)
-# check categorical distribution
-plot_bar(ncortex)
+
+proteins <- names(ncortex[1:77]) #creating list of protein names
+classes <- ncortex$class 
 ```
 
 ***Imputation of missing values***
-```{r}
-## imputing missing values
+```{r manip, warning = FALSE, message = FALSE}
+names(ncortex.raw) <- gsub("_N", "", names(ncortex.raw)) #removing _N in protein names
+
+#check for missing values
+ncortex.raw %>% 
+  is.na %>%
+  melt %>%
+  ggplot(data = .,
+         aes(x = Var2,
+             y = Var1)) +
+  geom_raster(aes(fill = value)) +
+  scale_fill_grey(name = "",
+                  labels = c("Present","Missing")) +
+  theme_minimal() + 
+  theme(axis.text.x  = element_text(angle=45, vjust=0.5)) + 
+  labs(x = "Variables in Dataset",
+       y = "Rows / observations",
+       title = "Missing Values in Dataset")
+```
+
+
+```{r, warning = FALSE, message = FALSE}
 # check the columns with NAs
 featNA <- names(which(sapply(ncortex, anyNA)))
 dataNA <- ncortex[, featNA]
@@ -105,11 +166,54 @@ nc.Class <- ncortex$class
 summary(ncortex)
 ```
 
-## Pre-processing - II
 
-For normalization, we use min-max scaling from preProcess() and check our transformation using Shapiro-Wilk test. 
-```{r}
+## Exploratory Data Analysis
+
+### Histogram of Protein Expression Level {.tabset .tabset-fade .tabset-pills}
+```{r, results='asis', warning = FALSE, message = FALSE}
+for(i in 1:length(proteins)){
+  plot <- ggplot(ncortex, aes(eval(parse(text = proteins[i])))) +
+    geom_histogram(aes(fill=..count..), color = "black", alpha = 0.5) +
+    scale_fill_gradient("Count", low="green", high="red") +
+    labs(title = proteins[i],
+         x = "Expression Level",
+         y = "Count") +
+    theme_light()
+  cat("#### ", proteins[i], "\n")
+  print(plot)
+  cat('\n\n')
+}
+
+ggplot(ncortex, aes(x = eval(parse(text = proteins[1])))) +
+    geom_histogram(aes(fill=..count..), color = "black", alpha = 0.5) +
+    scale_fill_gradient("Count", low="green", high="red") +
+    labs(title = proteins[1],
+         x = "Expression Level",
+         y = "Count")
+```
+
+### Distribution of Protein Expression Level by Class  {.tabset .tabset-fade .tabset-pills}
+
+```{r, results='asis', warning = FALSE, message = FALSE}
+for(i in 1:length(proteins)){
+  plot <- ggplot(ncortex, aes(x = class, y = eval(parse(text = proteins[i])))) +
+    geom_boxplot(aes(fill = class), alpha = 0.7) +
+    stat_summary(fun.y=mean, colour="darkred", geom="point", size=2) +
+    labs(y = proteins[i]) +
+    theme_light()
+  cat("#### ", proteins[i], "\n")
+  print(plot)
+  cat('\n\n')
+}
+```
+
+***Normalization***
+
+For normalization, we use min-max scaling from preProcess() and validate it using 
+Shapiro-Wilk test. 
+```{r, results='asis', warning = FALSE, message = FALSE}
 # Min-max scaling (range 0-1 for each column)
+nc.feat <- ncortex[1:77]
 min_max_scaling <- function(data) {
   pp <- preProcess(data.frame(data), method=c("range"))
   scaled.nc <- predict(pp, as.data.frame(data))
@@ -193,7 +297,7 @@ From the Rf-feature plot, we observe a constant downward trend from variable 15.
 
 ### PCA
 We perform PCA on our filtered data before we create feature subsets based on learning outcomes signified by our target classes. 
-```{r}
+```{r, warning = FALSE, message = FALSE}
 ##########################################
 ################ PCA  ####################
 ##########################################
@@ -312,7 +416,6 @@ formula.NC  # check
 ## Training models
 
 **Naive Bayes**
-
 
 ```{r}
 ##########################################

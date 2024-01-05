@@ -1,8 +1,13 @@
-## Summary
+# Summary
 
-The data set consists of the expression levels of 77 proteins/protein modifications that produced detectable signals in the nuclear fraction of the cortex. There are 38 control mice and 34 trisomic mice (Down syndrome), for a total of 72 mice. In the experiments, 15 measurements were registered of each protein per sample/mouse. Therefore, for control mice, there are 38x15, or 570 measurements, and for trisomic mice, there are 34x15, or 510 measurements. The dataset contains a total of 1080 measurements per protein. Each measurement can be considered as an independent sample/mouse. The eight classes of mice are described based on genotype, behavior, and treatment features. 
-
+The data set consists of the expression levels of 77 proteins/protein modifications that produced detectable signals in the nuclear fraction of the cortex. There are 38 control mice and 34 trisomic mice (Down syndrome), for a total of 72 mice. In the experiments, 15 measurements were registered of each protein per sample/mouse. Therefore, for control mice, there are 38x15, or 570 measurements, and for trisomic mice, there are 34x15, or 510 measurements. The dataset contains a total of 1080 measurements per protein. Each measurement can be considered as an independent sample/mouse.
+ 
+The eight classes of mice are described based on genotype, behavior, and treatment features. 
 According to genotype, mice can be controlled or trisomic. According to behavior, some mice have been stimulated to learn (context-shock) and others have not (shock-context) and to assess the effect of the drug memantine in recovering the ability to learn in trisomic mice, some mice have been injected with the drug and others have not.
+
+***The purpose of this project is to try to identifiy subsets of proteins that are discriminant for each class.***
+
+During this project I was referring to original article by Clara Higuera, Katheleen J. Gardiner and Krzysztof J. Cios ([Article](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0129126)])
 
 Data generated: https://archive.ics.uci.edu/ml/datasets/Mice+Protein+Expression
 
