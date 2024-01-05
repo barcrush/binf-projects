@@ -15,6 +15,9 @@ Graphical interpretation of the study is show below:
 
 ![tileshop](https://user-images.githubusercontent.com/90593831/210114119-2b9084d6-6adc-43bf-a32d-a9cc6e0441b2.jpeg)
 
+**Essentially, we have performed analysis in R and python. In R, we have done the complete multi-class classification to validate the original paper. In the case of python, we tried a more flexible approach to explore the data with multiple visualizations and applied Machine learning algorithms, however, Deep learning is still unfinished** 
+
+
 ## Approach
 Firstly, I tried to extract features (genes) that were potentially responsible for a particular learning outcome and tried to compare our results with the previous studies using common filtration and extraction methods to select features of specific learning outcomes (i.e., Normal, Failed and Rescued learning), and then we qualitatively isolated features from PCA.
 
