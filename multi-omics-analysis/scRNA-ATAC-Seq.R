@@ -11,7 +11,7 @@ set.seed(1234)
 base <- "/Users/ymaithania/Academics/Data/imperial2020_21/data_analysis_project"
 rna <- Read10X(data.dir = paste0(base, '/data/GSE126074_AdBrainCortex/cDNA'), gene.column = 1) # default Read10X selects gene.column 2  
 atac <- Read10X(data.dir = paste0(base, "/data/GSE126074_AdBrainCortex/chromatin"), gene.column = 1)
-fragments <- "/Users/marthaobrien/Documents/imperial2020_21/data_analysis_project/data/GSE126074_AdBrainCortex/chromatin/fragments.sort.bed.gz"   
+fragments <- "/Users/ymaithania/Academics/Data/imperial2020_21/data_analysis_project/data/GSE126074_AdBrainCortex/chromatin/fragments.sort.bed.gz"   
 # need 2 files: 'fragments.sort.bed.gz' and 'fragments.sort.bed.gz.tbi'; they need to be in same directory  
 # if fragment files are not available for SNARE-seq, files can be created using following code: https://github.com/timoast/SNARE-seq
 
