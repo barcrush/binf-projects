@@ -1,0 +1,342 @@
+---
+title: "Transcriptome analysis of pediatric localized scleroderm"
+author: "YM"
+date: "2024-07-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE, warning=FALSE}
+# func to install and load pkgs from parent repo
+install_and_load <- function(pkgs) {
+  if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+  
+  new_pkg <- pkgs[!(pkgs %in% installed.packages()[,"Package"])]
+  if(length(new_pkg)) BiocManager::install(new_pkg, update = FALSE, ask = FALSE)
+  
+  lapply(pkgs, library, character.only = TRUE)
+}
+
+packages <- c("dplyr", "limma", "ggplot2", "ggrepel", "ComplexHeatmap", "Rtsne", "RColorBrewer", "clusterProfiler", "fgsea", "msigdbr","pathview", "org.Hs.eg.db", "enrichplot")
+
+
+# call the func
+invisible(install_and_load(packages))
+```
+
+
+```{r}
+raw_counts <- read.csv('./GSE166861_FPKM_normalized_data.csv.gz')
+
+counts_mat <- raw_counts[-1] %>% as.matrix
+rownames(counts_mat) <- raw_counts$gene_id
+
+logT_data <- log2(counts_mat + 1)
+
+head(logT_data)
+```
+
+```{r, library distribution}
+library(edgeR)
+list <- DGEList(counts=logT_data)
+
+mean_lib_size <- mean(list$samples$lib.size*1e-6)
+
+barplot(list$samples$lib.size*1e-6, names=1:ncol(list), ylab="Library size (millions)")
+abline(h = mean_lib_size, col = "red")
+
+```
+
+```{r}
+
+sample.info <- data.frame(condition = ifelse(grepl("^HSK", colnames(logT_data)), "Healthy", "LS"))
+rownames(sample.info) <- colnames(logT_data)
+
+design <- model.matrix(~0 + condition, data = sample.info)
+colnames(design) <- unique(sample.info$condition)
+
+# voom transformation
+v <- voom(logT_data, design, plot = TRUE)
+
+```
+
+
+```{r}
+# `lmFit` fits a linear model using weighted least squares for each gene:
+
+fit <- lmFit(v, design)
+
+# comparisons between groups (log fold-changes) are obtained as contrasts of these fitted linear models
+contrast.matrix <- makeContrasts(LS - Healthy, levels = colnames(coef(fit)))
+
+# estimate contrast for each gene
+fit2 <- contrasts.fit(fit, contrast.matrix)
+
+# empirical Bayes smoothing of standard errors (shrinks standard errors that are much larger or smaller than those from other genes towards the average standard error) (see https://www.degruyter.com/doi/10.2202/1544-6115.1027)
+fit2 <- eBayes(fit2)
+
+results <- topTable(fit2, coef = 1, sort.by = "P", n = Inf)
+
+head(results)
+
+```
+LogFC: it is a ratio of gene expression levels between the Healthy and LS group, and then taken the Logarithm of 2
+AveExpr: the average gene expression level across all samples
+t: t-statistic is used to assess the significance of the logFC (nagnitude of difference between healthy vs LS)
+P.Value: statistical indicator for the probability of observing a logFC as true or not
+adj.P.Val: accounts for correction in multiple hypothesis testing (comparison of gene expression across multiple samples)
+B: B-statistics provides a probability-based estimate of DE (similar to t-statistic but on log scale)
+
+```{r}
+# adding a new column 'regulated' based on adj.P.Val and logFC
+results$regulated <- with(results, 
+                          ifelse(adj.P.Val < 0.05 & logFC >= 1.5, "up", 
+                                 ifelse(adj.P.Val < 0.05 & logFC < 1.5, "down", "not significant")))
+
+# remove rows where ID starts with "LOC" - since they can be artifacts 
+results_filtered <- results[!grepl("^LOC", results$ID), ]
+
+# convert 'regulated' to a factor with levels in a meaningful order
+results_filtered$regulated <- factor(results_filtered$regulated, 
+                                           levels = c("up", "down", "not significant"))
+
+# summarize the number of up/down/not significant genes
+table(results_filtered$regulated)
+
+# write.csv(results_filtered, "results_processed.csv", row.names = FALSE)
+head(results_filtered)
+```
+
+```{r}
+significant_genes <- results_filtered %>%
+  filter(regulated %in% c("up", "down")) %>%
+  pull(ID)
+
+significant_mat <- logT_data[significant_genes, ]
+
+length(significant_genes)
+
+head(significant_genes)
+```
+
+```{r, heatmap}
+# Load the necessary library
+library(ComplexHeatmap)
+
+# Define the custom color function
+min_val <- min(significant_mat)
+max_val <- max(significant_mat)
+mid_val <- 0
+
+# Custom color palette from darkred to white to green
+col_fun <- colorRampPalette(c("darkred", "white", "green"))
+
+# Scale matrix
+scaled_mat <- t(scale(t(significant_mat)))
+
+# Generate a simple heatmap
+heatmap <- Heatmap(scaled_mat,
+                   show_row_names = FALSE,
+                   show_column_names = TRUE,
+                   name = "Differentially expressed genes across samples",
+                   col = col_fun(100))
+
+# Draw the heatmap
+draw(heatmap)
+
+
+
+```
+
+```{r, heatmap}
+# Load the necessary library
+library(ComplexHeatmap)
+
+# Define the custom color function
+min_val <- min(significant_mat)
+max_val <- max(significant_mat)
+mid_val <- 0
+
+# Custom color palette from darkred to white to green
+col_fun <- colorRampPalette(c("darkred", "white", "green"))
+
+# Scale matrix and create the heatmap annotation
+scaled_mat <- t(scale(t(significant_mat)))
+col_annot <- HeatmapAnnotation(df = sample.info,
+                               col = list(condition = c("Healthy"= "red", "LS" = "blue")))
+
+# Generate the heatmap
+heatmap <- Heatmap(scaled_mat,
+                   top_annotation = col_annot,
+                   show_row_names = FALSE,
+                   show_column_names = TRUE,
+                   column_names_side = "bottom",
+                   name = "Differentially expressed genes across samples",
+                   col = col_fun(100),
+                   bottom_annotation = HeatmapAnnotation(
+                     counts = anno_barplot(colSums(scaled_mat)),
+                     annotation_name_side = "left"
+                   ))
+
+# Draw the heatmap
+draw(heatmap, heatmap_legend_side = "bottom")
+
+
+
+######
+col_annot <- HeatmapAnnotation(df = sample.info,
+                               col = list(condition = c("Healthy"= "red", "LS" = "blue")))
+
+heatmap <- Heatmap(t(scale(t(significant_mat))),
+                   top_annotation = col_annot,
+                   show_row_names = FALSE,
+                   name = "Differentially expressed genes across samples")
+
+draw(heatmap)
+```
+
+
+```{r, volcano}
+
+
+
+# create the data based on cutoffs
+volcano_data <- results_filtered %>%
+  mutate(
+    regulated = case_when(
+      adj.P.Val < 0.05 & logFC >= 1.5 ~ "up",
+      adj.P.Val < 0.05 & logFC < -1.5 ~ "down",
+      TRUE ~ "not significant"
+    )
+  )
+
+significant_genes <- volcano_data %>%
+  filter(regulated %in% c("up", "down"))
+
+
+# select top 25 genes
+top_genes <- volcano_data %>%
+  filter(regulated %in% c("up", "down")) %>%
+  group_by(regulated) %>%
+  top_n(25, wt = abs(logFC))
+
+# create the plot
+volcano_plot <- ggplot(volcano_data, aes(x = logFC, y = -log10(adj.P.Val))) +
+  geom_point(aes(color = regulated), alpha = 0.7, size = 2) +
+  geom_vline(xintercept = c(-1.5, 1.5), linetype = "dashed", color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  scale_color_manual(values = c("up" = "red", "down" = "blue", "not significant" = "grey")) +
+  ggrepel::geom_text_repel(
+    data = top_genes,
+    aes(label = ID),
+    size = 3,
+    box.padding = 0.5,
+    max.overlaps = Inf,
+    segment.color = "grey50"
+  ) +
+  labs(
+    title = "Volcano Plot of DEGs",
+    x = "Log2 Fold Change",
+    y = "-Log10 Adjusted P-value",
+    color = "Regulation"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.title = element_text(face = "bold")
+  )
+
+volcano_plot
+
+# ggsave("volcano_plot_updated.pdf", volcano_plot, width = 12, height = 10, units = "in")
+
+# Summary of gene counts by regulation
+# regulation_summary <- table(volcano_data$regulated)
+# print(regulation_summary)
+
+```
+
+
+
+```{r, GO}
+significant_genes <- volcano_data %>%
+  filter(regulated %in% c("up", "down"))
+
+# Create gene_list before using it
+gene_list <- significant_genes$logFC
+names(gene_list) <- significant_genes$ID
+
+# Sort the list in decreasing order (optional)
+gene_list <- sort(gene_list, decreasing = TRUE)
+
+# Run GO enrichment analysis
+go_result <- enrichGO(gene = names(gene_list),
+                      OrgDb = org.Hs.eg.db,
+                      keyType = "SYMBOL",  
+                      ont = "BP", 
+                      pAdjustMethod = "BH",
+                      pvalueCutoff = 0.05,
+                      qvalueCutoff = 0.2)
+
+# View results
+head(go_result)
+
+# Plot results
+dotplot(go_result)
+
+```
+
+```{r, GSEA}
+# Load required libraries
+
+# Prepare your ranked gene list
+# Assuming sig_genes is your results table with logFC and gene_id columns
+ranked_genes <- sort(gene_list, decreasing = TRUE)
+
+# Get gene sets (e.g., hallmark gene sets)
+m_df <- msigdbr(species = "Homo sapiens", category = "H")
+
+# Use gene symbols instead of Entrez IDs
+gene_sets <- split(m_df$gene_symbol, m_df$gs_name)
+
+# Run GSEA
+gsea_results <- fgsea(pathways = gene_sets, 
+                      stats = ranked_genes,
+                      minSize = 15,
+                      maxSize = 500,
+                      nperm = 10000)
+
+# View results
+head(gsea_results)
+
+# Sort results by NES (Normalized Enrichment Score)
+gsea_results <- gsea_results %>% arrange(desc(NES))
+
+# Plot top enriched pathways
+top_pathways <- gsea_results %>% 
+  filter(padj < 0.05) %>% 
+  top_n(10, wt = abs(NES))
+
+ggplot(top_pathways, aes(reorder(pathway, NES), NES)) +
+  geom_col(aes(fill = padj < 0.05)) +
+  coord_flip() +
+  labs(x = "Pathway", y = "Normalized Enrichment Score",
+       title = "Top Enriched Pathways") +
+  theme_minimal()
+
+# Plot enrichment for a specific pathway (e.g., the top pathway)
+top_pathway <- gsea_results$pathway[1]
+plotEnrichment(gene_sets[[top_pathway]], ranked_genes) +
+  labs(title = top_pathway)
+
+# Save results
+# write.csv(gsea_results, "gsea_results.csv", row.names = FALSE)
+
+```
+
+
