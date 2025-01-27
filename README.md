@@ -1,4 +1,4 @@
-#List of Contents
+# List of Contents
 
 Welcome to MyProjects library, here you will find a wide range of completed and/or ongoing projects related to Bioinformatics & Data science.
 
@@ -11,4 +11,4 @@ In the study, Expression levels of 77 proteins were measured in the cerebral cor
 Essentially, we perfomed two analyses i.e., Feature subset (using PCA and Feature extraction) and Multi-classification study (using base and Ensemble learners) for 3 significant learning outcomes. 
 
 ### 3. Human GPCR protein analysis
-
+An algorithm to automatically clean and identify protein paralogs in human GPCRs from data extracted from Uniprot
