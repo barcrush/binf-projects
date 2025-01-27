@@ -1,8 +1,15 @@
 ---
-title: "Transcriptome analysis of pediatric localized scleroderm"
+title: "Bulk RNA-seq analysis of pediatric localized scleroderm"
 author: "YM"
-date: "2024-07-27"
-output: html_document
+date: "2024-01-21"
+html_document:
+    theme: flatly   
+    highlight: tango
+    toc: true       
+    toc_float: true 
+    number_sections: true
+    code_folding: hide  
+    toc_depth: 2  
 ---
 
 ```{r setup, include=FALSE}
@@ -10,7 +17,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r, include=FALSE, warning=FALSE}
-# func to install and load pkgs from parent repo
+## func to install and load pkgs from parent repo
 install_and_load <- function(pkgs) {
   if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
@@ -21,157 +28,241 @@ install_and_load <- function(pkgs) {
   lapply(pkgs, library, character.only = TRUE)
 }
 
-packages <- c("here", "dplyr", "limma", "ggplot2", "ggrepel", "ComplexHeatmap", "Rtsne", 
-              "RColorBrewer", "clusterProfiler", "fgsea", "pathview", "AnnotationDbi",
-              "org.Hs.eg.db", "enrichplot")
+packages <- c("here", "dplyr", "edgeR", "limma", "ggplot2", "ggrepel", "ComplexHeatmap", "Rtsne", 
+              "fgsea", "msigdbr", "clusterProfiler", "writexl", "org.Hs.eg.db", "enrichplot")
 
-# call the func
+## call the func
 invisible(install_and_load(packages))
 ```
 
 ```{r}
 ## read and explore the data
-raw_counts <- read.csv(here('Data/GSE166861_FPKM_normalized_data.csv.gz'))
+raw_counts <- read.csv(gzfile(here("GSE166861_FPKM_normalized_data.csv.gz")))
 
+## convert to matrix
+count_matrix <- raw_counts[-1] %>% as.matrix
+rownames(count_matrix) <- raw_counts$gene_id
 
-counts_mat <- raw_counts[-1] %>% as.matrix
-rownames(counts_mat) <- raw_counts$gene_id
+## replace NA with column means
+col_means <- colMeans(count_matrix, na.rm = TRUE)
+counts_mat_filled <- t(apply(count_matrix, 1, function(x) {
+  ifelse(is.na(x), col_means, x)
+}))
 
-logT_data <- log2(counts_mat + 1)
+## gilter rows
+count_matrix <- counts_mat_filled[rowSums(!is.na(count_matrix)) > ncol(count_matrix)/2, ]
 
-head(logT_data)
+head(count_matrix)
+```
+
+```{r}
+## define metadata
+coldata <- data.frame(Samples = colnames(count_matrix),
+                      Condition = ifelse(grepl("^HSK", colnames(count_matrix)), "Healthy", "LS"))
+
+coldata
 ```
 
 ```{r, library distribution}
+## convert counts to DGE list
+dge <- DGEList(counts=count_matrix)
 
-list <- DGEList(counts=logT_data)
+## add group information
+dge$samples$group <- coldata$Condition
+sample_names <- coldata$Samples
 
-# library size distribution
-mean_lib_size <- mean(list$samples$lib.size*1e-6)
+## filter low-expressed genes
+## keeping genes with at least 1 count-per-million (CPM) in at least 2 samples
+keep <- filterByExpr(dge, group = dge$samples$group)
+dge <- dge[keep, , keep.lib.sizes = FALSE]
 
-barplot(list$samples$lib.size*1e-6, names=1:ncol(list), ylab="Library size (millions)")
-abline(h = mean_lib_size, col = "red")
+## normalize counts using TMM normalization
+dge <- calcNormFactors(dge)
+
+## enhanced plots of library sizes before and after normalization
+par(mar = c(6, 5, 4, 2)) 
+
+## barplot for raw library sizes
+raw_lib_sizes <- dge$samples$lib.size 
+mean_raw_lib_size <- mean(raw_lib_sizes)
+
+## create a plotting df
+data1 <- data.frame(Sample = sample_names, LibrarySize = raw_lib_sizes)
+
+## plot
+ggplot(data1, aes(x = Sample, y = LibrarySize)) +
+  geom_bar(stat = "identity", fill = "skyblue") + 
+  geom_hline(yintercept = mean_raw_lib_size, color = "red", linetype = "dashed", linewidth = 0.5) + 
+  labs(
+    title = "Library distribution",
+    x = "Samples", 
+    y = "Library Size"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.background = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5, face = "bold") 
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+  annotate("text", x = 1, y = mean_raw_lib_size + 5000, label = "", color = "red", size = 2)
+
+## barplot for normalized library sizes
+norm_lib_sizes <- dge$samples$lib.size * dge$samples$norm.factors
+mean_norm_lib_size <- mean(norm_lib_sizes)
+
+## create a plotting df
+data2 <- data.frame(Sample = sample_names, LibrarySize = norm_lib_sizes)
+
+## plot
+ggplot(data2, aes(x = Sample, y = LibrarySize)) +
+  geom_bar(stat = "identity", fill = "lightgreen") + 
+  geom_hline(yintercept = mean_norm_lib_size, color = "red", linetype = "dashed", linewidth = 0.5) + 
+  labs(
+    title = "Library distribution",
+    x = "Samples", 
+    y = "Library Size"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.background = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5, face = "bold") 
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+  annotate("text", x = 1, y = mean_norm_lib_size + 5000, label = "", color = "red", size = 2)
+
+```
+```{r PCA}
+## Calculate covariance matrix  
+pca_res <- prcomp(t(dge$counts), center = TRUE, scale. = TRUE)
+explained_variance <- summary(pca_res)$importance[2, ]
+
+## pca dataframe having calculated PCs (scores, eigenvectors, eigenvalues)
+pca_df <- as.data.frame(pca_res$x)
+pca_df$Sample <- coldata$Condition 
+
+## plot 
+ggplot(pca_df, aes(x = PC1, y = PC2, label = "")) +
+  geom_point(size = 3, aes(color = Sample)) +
+  geom_text(hjust = 1.5, vjust = 1.5) +
+  labs(
+    title = "PCA Plot",
+    x = paste0("PC1 (", round(explained_variance[1] * 100, 2), "%)"),
+    y = paste0("PC2 (", round(explained_variance[2] * 100, 2), "%)")
+  ) +
+  theme_minimal()
 
 ```
 
-```{r}
+```{r tSNE}
+set.seed(27)
+tsne_res <- Rtsne(t(dge$counts), perplexity = 5, dims = 2, verbose = TRUE, max_iter = 1000)
 
-sample.info <- data.frame(condition = ifelse(grepl("^HSK", colnames(logT_data)), "Healthy", "LS"))
-rownames(sample.info) <- colnames(logT_data)
+## tSNE dataframe 
+tsne_df <- as.data.frame(tsne_res$Y)
+colnames(tsne_df) <- c("tSNE1", "tSNE2")
+tsne_df$Sample <- coldata$Condition
 
-design <- model.matrix(~0 + condition, data = sample.info)
-colnames(design) <- unique(sample.info$condition)
-
-# voom transformation
-v <- voom(logT_data, design, plot = TRUE)
+## plot
+ggplot(tsne_df, aes(x = tSNE1, y = tSNE2, label = "")) +
+  geom_point(size = 3, aes(color = Sample)) + 
+  geom_text(hjust = 1.5, vjust = 1.5) +
+  labs(
+    title = "t-SNE Plot",
+    x = "tSNE1",
+    y = "tSNE2"
+  ) +
+  theme_minimal()
 
 ```
 
+## Limma-voom transformation
+```{r, DGE}
+## design matrix for group comparisons
+group <- factor(coldata$Condition, levels = c("Healthy", "LS")) 
+design_mat <- model.matrix(~ 0 + group)   # Design matrix without intercept
+colnames(design_mat) <- levels(group) 
 
-```{r}
-# `lmFit` fits a linear model using weighted least squares for each gene:
+## voom transformation
+v <- voom(dge, design_mat, plot = TRUE)
 
-fit <- lmFit(logT_data, design)
+## fit linear model
+fit <- lmFit(v, design_mat)
 
-# comparisons between groups (log fold-changes) are obtained as contrasts of these fitted linear models
-contrast.matrix <- makeContrasts(LS - Healthy, levels = colnames(coef(fit)))
+## create contrasts (LS vs HC)
+contrast.matrix <- makeContrasts(LS - Healthy, levels = design_mat)
 
-# estimate contrast for each gene
+## apply contrasts and eBayes
 fit2 <- contrasts.fit(fit, contrast.matrix)
-
-# empirical Bayes smoothing of standard errors (shrinks standard errors that are much larger or smaller than those from other genes towards the average standard error) (see https://www.degruyter.com/doi/10.2202/1544-6115.1027)
 fit2 <- eBayes(fit2)
 
-results <- topTable(fit2, coef = 1, adjust.method = "BH", sort.by = "P", n = Inf)
+## save top differentially expressed genes
+deg <- topTable(fit2, number = Inf, adjust.method = "BH", sort.by = "P")
 
-head(results)
+## get all, up, and down regulated DE genes
+deg_all <- subset(deg, adj.P.Val < 0.05)
+deg_up <- subset(deg, logFC > 0 & adj.P.Val < 0.05)
+deg_down <- subset(deg, logFC < 0 & adj.P.Val < 0.05)
 
-```
-LogFC: it is a ratio of gene expression levels between the Healthy and LS group, and then taken the Logarithm of 2
-AveExpr: the average gene expression level across all samples
-t: t-statistic is used to assess the significance of the logFC (nagnitude of difference between healthy vs LS)
-P.Value: statistical indicator for the probability of observing a logFC as true or not
-adj.P.Val: accounts for correction in multiple hypothesis testing (comparison of gene expression across multiple samples)
-B: B-statistics provides a probability-based estimate of DE (similar to t-statistic but on log scale)
+## save them
+output_file <- here("Bulk-RNASeq", "Localized_scleroderma", "Results", "Differential", "1_Deglist", "HC_vs_LS_deg.xlsx")
 
-```{r}
-# adding a new column 'regulated' based on adj.P.Val and logFC
-results$regulated <- with(results, 
-                          ifelse(adj.P.Val < 0.05 & logFC >= 1.5, "up", 
-                                 ifelse(adj.P.Val < 0.05 & logFC < 1.5, "down", "not significant")))
-
-# Remove rows where ID starts with "LOC"
-results_filtered <- results[!grepl("^LOC", results$ID), ]
-
-# Optional: convert 'regulated' to a factor with levels in a meaningful order
-results_filtered$regulated <- factor(results_filtered$regulated, 
-                                           levels = c("up", "down", "not significant"))
-
-# Optional: summarize the number of up/down/not significant genes
-table(results_filtered$regulated)
-
-# Optional: write the results to a CSV file
-# write.csv(results_filtered, "results_processed.csv", row.names = FALSE)
-head(results_filtered)
-```
-
-```{r}
-significant_genes <- results_filtered %>%
-  filter(regulated %in% c("up", "down")) %>%
-  pull(ID)
-
-significant_mat <- logT_data[significant_genes, ]
-
-length(significant_genes)
+write_xlsx(
+  list(
+    "All" = deg_all,
+    "Up" = deg_up,
+    "Down" = deg_down
+  ),
+  path = output_file
+)
 ```
 
 ```{r, heatmap}
-col_annot <- HeatmapAnnotation(df = sample.info,
-                               col = list(condition = c("Healthy"= "darkgreen", "LS" = "purple")))
+## subset the expression data for DEGs
+deg_expression <- v$E[rownames(v$E) %in% rownames(deg_all), ]
 
-Heatmap(t(scale(t(significant_mat))),
-        top_annotation = col_annot,
-        show_row_names = FALSE,
-        name = "Differentially expressed genes across samples")
+color_palette <- list(
+  condition = c(LS = "red", Healthy = "green")
+)
 
+condition <- factor(c(rep("LS", 14), rep("Healthy", 4)))
 
-
+## plot heatmap
+pheatmap(
+  deg_expression,
+  annotation_col = data.frame(condition),
+  show_rownames = FALSE,       
+  show_colnames = FALSE,       
+  main = "Heatmap of significant genes",  
+  color = colorRampPalette(c("green", "white", "red"))(100),  
+  fontsize = 12,               # Font size
+  scale = "row",               # Scale rows (genes)
+  annotation_colors = list(condition = c("LS" = "blue", "Healthy" = "yellow")), 
+  annotation_legend = TRUE,    
+  treeheight_col = 0          
+)
 ```
 
-
 ```{r, volcano}
-library(ggrepel)
-
-# create the data based on cutoffs
-volcano_data <- results_filtered %>%
+## create the data based on cutoffs
+volcano_data <- deg %>%
   mutate(
     regulated = case_when(
-      adj.P.Val < 0.05 & logFC >= 1.5 ~ "up",
-      adj.P.Val < 0.05 & logFC < -1.5 ~ "down",
+      adj.P.Val < 0.05 & logFC > 0 ~ "up",
+      adj.P.Val < 0.05 & logFC <= 0 ~ "down",
       TRUE ~ "not significant"
     )
   )
 
-# select top 25 genes
-top_genes <- volcano_data %>%
-  filter(regulated %in% c("up", "down")) %>%
-  group_by(regulated) %>%
-  top_n(25, wt = abs(logFC))
+#head(volcano_data)
 
-# create the plot
+## plot
 volcano_plot <- ggplot(volcano_data, aes(x = logFC, y = -log10(adj.P.Val))) +
   geom_point(aes(color = regulated), alpha = 0.7, size = 2) +
   geom_vline(xintercept = c(-1.5, 1.5), linetype = "dashed", color = "black") +
   geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
   scale_color_manual(values = c("up" = "red", "down" = "blue", "not significant" = "grey")) +
-  ggrepel::geom_text_repel(
-    data = top_genes,
-    aes(label = ID),
-    size = 3,
-    box.padding = 0.5,
-    max.overlaps = Inf,
-    segment.color = "grey50"
-  ) +
   labs(
     title = "Volcano Plot of DEGs",
     x = "Log2 Fold Change",
@@ -187,100 +278,86 @@ volcano_plot <- ggplot(volcano_data, aes(x = logFC, y = -log10(adj.P.Val))) +
 
 volcano_plot
 
-# ggsave("volcano_plot_updated.pdf", volcano_plot, width = 12, height = 10, units = "in")
-
-# Summary of gene counts by regulation
-# regulation_summary <- table(volcano_data$regulated)
-# print(regulation_summary)
+# ggsave("volcanoplot_LS_vs_HC.pdf", volcano_plot, width = 12, height = 10, units = "in")
 
 ```
 
 
 
 ```{r, GO}
-# prepare gene list
+## GO analysis for up and down regulated genes
 
-head(names(gene_list))
-significant_results <- results_filtered %>%
-  filter(ID %in% significant_genes)
+## GO enrichment func
+ego <- function(genes) {
+  go_result <- enrichGO(
+    gene = genes,
+    OrgDb = org.Hs.eg.db,
+    keyType = "SYMBOL",
+    ont = "BP",
+    pAdjustMethod = "BH",
+    pvalueCutoff = 0.05,
+    qvalueCutoff = 0.2,
+    readable = TRUE
+  )
+}
 
-gene_list <- significant_results$logFC
-names(gene_list) <- significant_results$ID
 
+## sort and get DE genes
+deg_sorted <- deg[order(deg$logFC, decreasing = TRUE), ]
+gene_list1 <- rownames(deg_sorted)
 
-# Sort the list in decreasing order (optional)
-gene_list = sort(gene_list, decreasing = TRUE)
+## call the fun
+ego_run <- ego(genes = gene_list1)
 
-# Run GO enrichment analysis
-go_result <- enrichGO(gene = names(gene_list),
-                      OrgDb = org.Hs.eg.db,
-                      keyType = "SYMBOL",  
-                      ont = "BP", 
-                      pAdjustMethod = "BH",
-                      pvalueCutoff = 0.05,
-                      qvalueCutoff = 0.2)
+bar_ego <- barplot(ego_run,
+                      title = "GO Enrichment",
+                      las = 1,
+                      font.size = 10,
+                      title.size = 10,
+                      label.size = 7)
 
-# View results
-head(go_result)
-
-# Plot results
-dotplot(go_result)
-
+bar_ego
 ```
-
 ```{r, GSEA}
-# Load required libraries
-library(fgsea)
-library(msigdbr)
-
-# Prepare your ranked gene list
-# Assuming sig_genes is your results table with logFC and gene_id columns
-sig_genes <- results_filtered  %>%
-  filter(ID == significant_genes)
-
-gene_list <- sig_genes$logFC
-names(gene_list) <- sig_genes$ID
+gene_list <- deg$logFC
+names(gene_list) <- rownames(deg)
 ranked_genes <- sort(gene_list, decreasing = TRUE)
 
-# Get gene sets (e.g., hallmark gene sets)
+## gene sets 
 m_df <- msigdbr(species = "Homo sapiens", category = "H")
-
-# Use gene symbols instead of Entrez IDs
 gene_sets <- split(m_df$gene_symbol, m_df$gs_name)
 
-# Run GSEA
+## run GSEA
 gsea_results <- fgsea(pathways = gene_sets, 
                       stats = ranked_genes,
                       minSize = 15,
                       maxSize = 500,
                       nperm = 10000)
 
-# View results
-head(gsea_results)
+# head(gsea_results)
 
-# Sort results by NES (Normalized Enrichment Score)
+## sort results by NES 
 gsea_results <- gsea_results %>% arrange(desc(NES))
 
-# Plot top enriched pathways
-top_pathways <- gsea_results %>% 
-  filter(padj < 0.05) %>% 
-  top_n(10, wt = abs(NES))
+top_pathways <- gsea_results %>%
+  filter(padj < 0.05) %>%  
+  top_n(10, wt = abs(NES))  
 
-ggplot(top_pathways, aes(reorder(pathway, NES), NES)) +
-  geom_col(aes(fill = padj < 0.05)) +
-  coord_flip() +
-  labs(x = "Pathway", y = "Normalized Enrichment Score",
-       title = "Top Enriched Pathways") +
-  theme_minimal()
+# Create the plot
+ggplot(top_pathways, aes(reorder(pathway, NES), NES)) + 
+  geom_col(aes(fill = padj < 0.05), show.legend = FALSE) + 
+  coord_flip() +  
+  labs(x = "Pathway", 
+       y = "NES", 
+       title = "Top pathwaysa") +  
+  theme_minimal(base_size = 14) + 
+  theme(axis.text.y = element_text(size = 10),  
+        plot.title = element_text(hjust = 0.5, face = "bold"))
 
-# Plot enrichment for a specific pathway (e.g., the top pathway)
+## enrichment plot
 top_pathway <- gsea_results$pathway[1]
 plotEnrichment(gene_sets[[top_pathway]], ranked_genes) +
   labs(title = top_pathway)
-
-# Save results
-# write.csv(gsea_results, "gsea_results.csv", row.names = FALSE)
-
 ```
 
 
