@@ -27,13 +27,34 @@ install_and_load <- function(pkgs) {
   lapply(pkgs, library, character.only = TRUE)
 }
 
+## list of packages required for analysis
 packages <- c("rmdformats", "here", "dplyr", "edgeR", "limma", "ggplot2", "ggrepel", "ComplexHeatmap", "Rtsne", 
               "fgsea", "msigdbr", "clusterProfiler", "writexl", "org.Hs.eg.db", "enrichplot")
 
 ## call the func
 invisible(install_and_load(packages))
 ```
+## Package required
 
+1. "BiocManager": tool for installing, updating, and maintaining packages from Bioconductor (Pacakge with a suite of tools for                        Bioinformatics and Computational Biology analysis)
+2. "rmdformats": desired HTML formats for RMarkdown documents
+3. "here": simplifies file referencing by using project-based paths
+4. "dplyr": for data manipulation and transformation
+5. "edgeR": for creating differential expression list object and normalization
+6. "Rtsne": implements t-SNE for dimensionality reduction and visualization
+7. "ggplot2": tool for creating complex and customizable visualizations
+8. "ggrepel": enhances ggplot2 by preventing text labels from overlapping
+9. "limma": facilitates linear modeling 
+10. "writexl": allows exporting data frames to Excel files
+11. "ComplexHeatmap": creates detailed and customizable heatmaps
+12. "clusterProfiler": performs statistical analysis and visualization of functional profiles (GO)     
+13. "fgsea": conducts fast gene set enrichment analysis (GSEA)
+14. "msigdbr": provides gene sets for enrichment analysis (Molecular signature database)
+15. "org.Hs.eg.db": supplies human gene annotation data
+16. "enrichplot": Visualizes GSEA results
+
+Note: Code for installing the above list is in `LS_bulk_rnaseq.Rmd` file.
+              
 ## Data exploration
 ```{r}
 ## read and explore the data
@@ -227,7 +248,7 @@ sig_genes <- results[results$adj.P.Val < 0.05,]
 
 ## get up, and down regulated 
 deg_up <- subset(results, logFC > 0 & adj.P.Val < 0.05)
-deg_down <- subset(results, logFC < 0 & adj.P.Val < 0.05)
+deg_down <- subset(results, logFC <= 0 & adj.P.Val < 0.05)
 
 ## save them
 output_file <- here("HC_vs_LS_deg.xlsx")
@@ -364,7 +385,18 @@ ego <- function(genes, title) {
                     x = "GeneRatio",
                     color = "pvalue")
   
-  return(list(result = go_result, plot = bar_go))
+  ## create network
+  netk_go <- cnetplot(go_result,
+                          showCategory = 3,  
+                          color.params = list(edge = TRUE),
+                          circular = TRUE,
+                          node_label_size = 3,
+                          layout = "star",
+                          max.overlaps = 2,
+                          min_edge = 3) + 
+    theme(plot.background = element_rect(fill = "white"))
+  
+  return(list(result = go_result, barp = bar_go, netwp = netk_go))
 }
 
 ## sort and get DE genes, call the func
@@ -373,8 +405,10 @@ gene_list_up <- deg_sorted$ID
 up_go <- ego(gene_list_up, "Up regulated GO enrichment")
 
 ## plot and save
-print(up_go$plot)
-ggsave("GO_bar_up.png", up_go$plot, width = 12, height = 8, dpi = 300)
+print(up_go$barp)
+print(up_go$netwp)
+ggsave("GO_bar_up.png", up_go$barp, width = 12, height = 8, dpi = 300)
+ggsave("GO_netk_up.png", up_go$netwp, width = 12, height = 10, dpi = 300)
 
 ## sort and get DE genes, call the func
 deg_sorted2 <- deg_down[order(deg_down$logFC, decreasing = TRUE), ]
@@ -382,8 +416,10 @@ gene_list_down <- deg_sorted2$ID
 down_go <- ego(gene_list_down, "Down regulated GO enrichment")
 
 ## plot and save
-print(down_go$plot)
-ggsave("GO_bar_down.png", down_go$plot, width = 12, height = 8, dpi = 300)
+print(down_go$barp)
+print(down_go$netwp)
+ggsave("GO_bar_down.png", down_go$barp, width = 12, height = 8, dpi = 300)
+ggsave("GO_netk_down.png", down_go$netwp, width = 12, height = 10, dpi = 300)
 ```
 
 ## Gene set enrichment Analysis
@@ -427,7 +463,7 @@ ggsave("GSEA_barplot_LS_vs_HC.png", gsea_bar, width = 12, height = 8, dpi = 300)
 print(gsea_bar)
 
 ## enrichment plot
-top_pathway <- gsea_results$pathway[[1]]
+top_pathway <- gsea_results$pathway[[3]]
 gsea_enrich <- plotEnrichment(gene_sets[[top_pathway]], ranked_genes) + 
   labs(title = top_pathway)
 
